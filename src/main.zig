@@ -59,10 +59,7 @@ pub fn activate(app: *gtk.Application, _: ?*anyopaque) callconv(.C) void {
 }
 
 pub fn main() !void {
-    const app = gtk.Application.new("org.gtk.example", gio.ApplicationFlags{
-        // .is_launcher = true,
-        // .handles_open = false,
-    });
+    const app = gtk.Application.new("org.gtk.example", gio.ApplicationFlags{});
 
     _ = gio.Application.signals.activate.connect(app, ?*anyopaque, &activate, null, .{});
     const status = gio.Application.run(app.as(gio.Application), @intCast(std.os.argv.len), std.os.argv.ptr);
