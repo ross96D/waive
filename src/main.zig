@@ -3,6 +3,15 @@ const gtk = @import("gtk");
 const gio = @import("gio");
 const glib = @import("glib");
 const gdk = @import("gdk");
+const gobject = @import("gobject");
+
+const data = &[_][*:0]const u8{
+    "comida",  "sentido", "comida",  "sentido", "comida",  "sentido", "sentido", "sentido",
+    "sentido", "sentido", "sentido", "sentido", "sentido", "sentido", "sentido", "sentido",
+    "sentido", "sentido", "sentido", "sentido", "sentido", "sentido", "sentido", "sentido",
+    "sentido", "sentido", "sentido", "sentido", "sentido", "sentido", "sentido", "sentido",
+    "sentido", "sentido", "sentido", "sentido", "sentido", "sentido", "sentido", "sentido",
+};
 
 fn set_layer(window: *gtk.Window) void {
     const l = @cImport(@cInclude("gtk4-layer-shell.h"));
@@ -33,29 +42,47 @@ pub fn activate(app: *gtk.Application, _: ?*anyopaque) callconv(.C) void {
 
     set_layer(w);
 
-    const box = gtk.Box.new(gtk.Orientation.vertical, 1);
-    gtk.Widget.setHalign(box.as(gtk.Widget), gtk.Align.center);
-    gtk.Widget.setValign(box.as(gtk.Widget), gtk.Align.start);
-    gtk.Widget.setSizeRequest(box.as(gtk.Widget), 500, 0);
+    const main_box = gtk.Box.new(gtk.Orientation.vertical, 5);
+    gtk.Widget.setName(main_box.as(gtk.Widget), "outer-box");
+    gtk.Box.setSpacing(main_box, 3);
+    gtk.Window.setChild(w, main_box.as(gtk.Widget));
+
+    gtk.Widget.setSizeRequest(main_box.as(gtk.Widget), 500, 0);
 
     const entry = gtk.Entry.new();
     gtk.Entry.setPlaceholderText(entry, "search for link or password");
     gtk.Widget.setHexpand(entry.as(gtk.Widget), 1);
-    gtk.Box.append(box, entry.as(gtk.Widget));
+    gtk.Box.append(main_box, entry.as(gtk.Widget));
 
-    const list = gtk.ListBox.new();
-    for (0..5) |_| {
-        const label = gtk.Label.new("example text");
-        label.setXalign(0);
-        list.append(label.as(gtk.Widget));
-    }
-    gtk.Box.append(box, list.as(gtk.Widget));
+    const model_gio = gtk.StringList.new(@ptrCast(data));
+    const model = gtk.SingleSelection.new(model_gio.as(gio.ListModel));
+    const list = @import("list.zig").list(model.as(gtk.SelectionModel));
+
+    const scrolled = gtk.ScrolledWindow.new();
+    gtk.Widget.setVexpand(scrolled.as(gtk.Widget), 1);
+    gtk.ScrolledWindow.setChild(scrolled, list.as(gtk.Widget));
+
+    gtk.Box.append(main_box, scrolled.as(gtk.Widget));
 
     const button = gtk.Button.newWithLabel("Hellow");
-    gtk.Box.append(box, button.as(gtk.Widget));
+    gtk.Box.append(main_box, button.as(gtk.Widget));
 
-    gtk.Window.setChild(w, box.as(gtk.Widget));
     gtk.Window.present(w);
+}
+
+fn setup_list() *gtk.ListView {
+    const setup_cb = struct {
+        fn f(_: *gtk.SignalListItemFactory, item_: *gobject.Object, _: ?*anyopaque) callconv(.C) void {
+            const item: *gtk.ListItem = @ptrCast(item_);
+            const label = gtk.Label.new("entry");
+            item.setChild(label.as(gtk.Widget));
+        }
+    }.f;
+
+    const factory = gtk.SignalListItemFactory.new();
+    _ = gtk.SignalListItemFactory.signals.setup.connect(factory, ?*anyopaque, setup_cb, null, .{});
+
+    return gtk.ListView.new(null, factory.as(gtk.ListItemFactory));
 }
 
 pub fn main() !void {
