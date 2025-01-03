@@ -25,6 +25,38 @@ fn set_layer(window: *gtk.Window) void {
     l.gtk_layer_set_keyboard_mode(w, l.GTK_LAYER_SHELL_KEYBOARD_MODE_ON_DEMAND);
 }
 
+fn global_key_press(
+    _: *gtk.EventControllerKey,
+    keyval: c_uint,
+    _: c_uint,
+    _: gdk.ModifierType,
+    entry: *gtk.Entry,
+) callconv(.C) c_int {
+    const unicode = gdk.keyvalToUnicode(keyval);
+    if (unicode == 0) return 0;
+
+    if (unicode > 255) {
+        if (gtk.Widget.isFocus(entry.as(gtk.Widget)) == 1) {
+            return 0;
+        }
+        _ = gtk.Widget.grabFocus(entry.as(gtk.Widget));
+        return 0;
+    }
+    if (std.ascii.isPrint(@intCast(unicode))) {
+        if (gtk.Widget.isFocus(entry.as(gtk.Widget)) == 1) {
+            return 0;
+        }
+
+        _ = gtk.Widget.grabFocus(entry.as(gtk.Widget));
+        var buffer = entry.getBuffer();
+        _ = buffer.insertText(buffer.getLength(), @ptrCast(&[1:0]u8{@intCast(unicode)}), 1);
+        gtk.Editable.setPosition(entry.as(gtk.Editable), @intCast(buffer.getLength()));
+
+        return 0;
+    }
+    return 0;
+}
+
 pub fn activate(app: *gtk.Application, _: ?*anyopaque) callconv(.C) void {
     const window = gtk.ApplicationWindow.new(app);
     const w = window.as(gtk.Window);
@@ -45,6 +77,7 @@ pub fn activate(app: *gtk.Application, _: ?*anyopaque) callconv(.C) void {
     const main_box = gtk.Box.new(gtk.Orientation.vertical, 5);
     gtk.Widget.setName(main_box.as(gtk.Widget), "outer-box");
     gtk.Box.setSpacing(main_box, 3);
+
     gtk.Window.setChild(w, main_box.as(gtk.Widget));
 
     gtk.Widget.setSizeRequest(main_box.as(gtk.Widget), 500, 0);
@@ -53,6 +86,10 @@ pub fn activate(app: *gtk.Application, _: ?*anyopaque) callconv(.C) void {
     gtk.Entry.setPlaceholderText(entry, "search for link or password");
     gtk.Widget.setHexpand(entry.as(gtk.Widget), 1);
     gtk.Box.append(main_box, entry.as(gtk.Widget));
+
+    const controller = gtk.EventControllerKey.new();
+    _ = gtk.EventControllerKey.signals.key_pressed.connect(controller, *gtk.Entry, global_key_press, entry, .{});
+    gtk.Widget.addController(w.as(gtk.Widget), controller.as(gtk.EventController));
 
     const model_gio = gtk.StringList.new(@ptrCast(data));
     const model = gtk.SingleSelection.new(model_gio.as(gio.ListModel));
@@ -63,9 +100,8 @@ pub fn activate(app: *gtk.Application, _: ?*anyopaque) callconv(.C) void {
     gtk.ScrolledWindow.setChild(scrolled, list.as(gtk.Widget));
 
     gtk.Box.append(main_box, scrolled.as(gtk.Widget));
-
-    const button = gtk.Button.newWithLabel("Hellow");
-    gtk.Box.append(main_box, button.as(gtk.Widget));
+    // gtk.SelectionModel.
+    // _ = gtk.Widget.grabFocus(list.as(gtk.Widget));
 
     gtk.Window.present(w);
 }
