@@ -20,8 +20,11 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("gobject", gobject.module("gobject2"));
     exe.root_module.addImport("gio", gobject.module("gio2"));
     exe.root_module.addImport("gdk", gobject.module("gdk4"));
+    exe.root_module.addImport("secrets", gobject.module("secret1"));
 
     exe.linkSystemLibrary("gtk4-layer-shell-0");
+
+    exe.linkLibC();
 
     const step = b.step("check", "zls compile check");
     step.dependOn(&exe.step);

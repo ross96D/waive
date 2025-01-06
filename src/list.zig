@@ -4,22 +4,6 @@ const glib = @import("glib");
 const gio = @import("gio");
 const gobject = @import("gobject");
 
-const ui =
-    \\<interface>
-    \\  <template class="GtkListItem">
-    \\      <property name="child">
-    \\          <object class="GtkLabel">
-    \\              <binding name="label">
-    \\                  <lookup name="string">
-    \\                      <lookup name="item">GtkListItem</lookup>
-    \\                  </lookup>
-    \\              </binding>
-    \\          </object>
-    \\      </property>
-    \\  </template>
-    \\</interface>
-;
-
 pub fn list(model: *gtk.SelectionModel) *gtk.ListView {
     const item_factory = create_factory();
 

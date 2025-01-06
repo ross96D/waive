@@ -2,3 +2,8 @@
 - [ ] use the implemantation of the password manager that i created before in this program
 - [ ] finish the synch store implementation
   - [ ] how to sync? this brings the issue of merge conflicts
+
+
+## Implementation of local password storage
+- [ ] Encrypt storage with a passphrase
+- [ ] Storage the passphrase on the secrets service of org.freedesktop
