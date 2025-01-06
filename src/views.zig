@@ -186,8 +186,8 @@ pub const AddPassword = struct {
     var add_password_widgets: ?Widgets = null;
     const Widgets = extern struct {
         namespace: *gtk.Entry = undefined,
-        password: *gtk.Entry = undefined,
-        confirm: *gtk.Entry = undefined,
+        password: *gtk.PasswordEntry = undefined,
+        confirm: *gtk.PasswordEntry = undefined,
     };
     pub fn get() *gtk.Window {
         if (add_password_window) |w| return w;
@@ -250,7 +250,8 @@ pub const AddPassword = struct {
             gtk.Widget.setHexpand(password_label.as(gtk.Widget), 1);
             gtk.Widget.setHalign(password_label.as(gtk.Widget), .end);
 
-            const password_entry = gtk.Entry.new();
+            const password_entry = gtk.PasswordEntry.new();
+            password_entry.setShowPeekIcon(1);
             gtk.Widget.setName(password_entry.as(gtk.Widget), "password");
             add_password_widgets.?.password = password_entry;
             password_box.setStartWidget(password_label.as(gtk.Widget));
@@ -265,7 +266,8 @@ pub const AddPassword = struct {
             gtk.Widget.setHexpand(password_label.as(gtk.Widget), 1);
             gtk.Widget.setHalign(password_label.as(gtk.Widget), .end);
 
-            const password_entry = gtk.Entry.new();
+            const password_entry = gtk.PasswordEntry.new();
+            password_entry.setShowPeekIcon(1);
             gtk.Widget.setName(password_entry.as(gtk.Widget), "confirm_password");
             add_password_widgets.?.confirm = password_entry;
             password_box.setStartWidget(password_label.as(gtk.Widget));
@@ -280,7 +282,7 @@ pub const AddPassword = struct {
 
             const button_box = gtk.Box.new(.horizontal, 5);
             { // ---- Add label with icon ----
-                const icon = gtk.Image.newFromIconName("dialog-password");
+                const icon = gtk.Image.newFromIconName("emblem-ok-symbolic");
                 button_box.append(icon.as(gtk.Widget));
                 const label = gtk.Label.new("Accept");
                 button_box.append(label.as(gtk.Widget));
@@ -297,20 +299,20 @@ pub const AddPassword = struct {
 
     fn cb_accept(_: *gtk.Button, widgets: *Widgets) callconv(.C) void {
         var invalid: bool = false;
-        if (check_is_emtpy(widgets.namespace)) {
+        if (check_is_emtpy(widgets.namespace.as(gtk.Editable))) {
             invalid = true;
             addCssClass(widgets.namespace, "invalid");
         }
-        if (check_is_emtpy(widgets.password)) {
+        if (check_is_emtpy(widgets.password.as(gtk.Editable))) {
             invalid = true;
             addCssClass(widgets.password, "invalid");
         }
-        if (check_is_emtpy(widgets.confirm)) {
+        if (check_is_emtpy(widgets.confirm.as(gtk.Editable))) {
             invalid = true;
             addCssClass(widgets.confirm, "invalid");
         }
-        const password = widgets.password.getBuffer();
-        const confirm = widgets.confirm.getBuffer();
+        const password = widgets.password.as(gtk.Editable);
+        const confirm = widgets.confirm.as(gtk.Editable);
         if (!eql(password.getText(), confirm.getText())) {
             invalid = true;
             addCssClass(widgets.confirm, "invalid");
@@ -359,9 +361,8 @@ fn removeCssClass(widget: anytype, class: [*:0]const u8) void {
     gtk.Widget.removeCssClass(widget.as(gtk.Widget), class);
 }
 
-fn check_is_emtpy(entry: *gtk.Entry) bool {
-    const buffer = entry.getBuffer();
-    return buffer.getLength() == 0;
+fn check_is_emtpy(editable: *gtk.Editable) bool {
+    return eql(editable.getText(), "");
 }
 
 fn eql(a: [*:0]const u8, b: [*:0]const u8) bool {
