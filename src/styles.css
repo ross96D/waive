@@ -1,0 +1,7 @@
+.invalid {
+    background-color: red;
+    /* transition: background-color ease-out 0.5s; */
+}
+* {
+    transition: background-color ease-out 0.35s;
+}
