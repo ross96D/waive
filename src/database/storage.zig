@@ -12,12 +12,16 @@ fn data_directory() !std.fs.Dir {
     if (env.get("HOME")) |path| {
         var dir = try std.fs.openDirAbsolute(path, .{});
         defer dir.close();
-        return dir.makeOpenPath(utils.APP_NAME, .{ .iterate = true });
+        return dir.makeOpenPath(".local/share/" ++ utils.APP_NAME, .{ .iterate = true });
+    }
+    var iter = env.iterator();
+    while (iter.next()) |v| {
+        std.debug.print("{s} {s}\n", .{ v.key_ptr.*, v.value_ptr.* });
     }
     std.log.err("no home variable found", .{});
     std.posix.exit(1);
 }
-const Storage = struct {
+pub const Storage = struct {
     const StoreData = struct {
         namespace: []const u8,
         password: []const u8,
@@ -47,7 +51,8 @@ const Storage = struct {
         errdefer self.dir.deleteFile(data.namespace) catch {};
         defer file.close();
 
-        try file.write(encp);
+        const n = try file.write(encp);
+        std.debug.assert(n == encp.len); // TODO add context
     }
 
     pub fn clip(self: Storage, namespace: []const u8) !void {

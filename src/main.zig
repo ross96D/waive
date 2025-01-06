@@ -1,5 +1,6 @@
 const std = @import("std");
-const views = @import("./views.zig");
+const views = @import("views.zig");
+const utils = @import("utils.zig");
 const gtk = @import("gtk");
 const gdk = @import("gdk");
 const gio = @import("gio");

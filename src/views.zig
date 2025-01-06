@@ -3,7 +3,9 @@ const gtk = @import("gtk");
 const gio = @import("gio");
 const glib = @import("glib");
 const gdk = @import("gdk");
-const pass = @import("./passphrase/root.zig");
+const pass = @import("passphrase/root.zig");
+const storage = @import("database/storage.zig");
+const utils = @import("utils.zig");
 
 // test passpharse 123
 const NULL = @as(*allowzero void, @ptrFromInt(0));
@@ -47,6 +49,8 @@ fn close_window(window: ?*anyopaque, _: ?*anyopaque) callconv(.C) void {
 
 pub fn init_application(app: *gtk.Application) void {
     application = app;
+
+    utils.init(allocator);
 
     const action = gio.SimpleAction.new("quit", null);
     defer action.unref();
@@ -336,10 +340,16 @@ pub const AddPassword = struct {
             std.log.err("cb_set_password {d} {s}", .{ err.f_code, err.f_message orelse "unknown error" });
             return;
         }
+        const app: *gtk.Application = @ptrCast(@alignCast(p_data));
+
         std.debug.assert(p_res != null);
         const res = p_res.?;
-        _ = res;
-        const app: *gtk.Application = @ptrCast(@alignCast(p_data));
+
+        const store = storage.Storage.init(utils.to_slice(res), allocator) catch unreachable; // TODO handle gracefully
+        store.store(.{
+            .namespace = utils.to_slice(getText(add_password_widgets.?.namespace.as(gtk.Editable))),
+            .password = utils.to_slice(getText(add_password_widgets.?.password.as(gtk.Editable))),
+        }) catch unreachable; // TODO handle gracefully;
 
         const wlist = app.getWindows();
         glib.List.foreach(wlist, &close_window, null);
@@ -365,6 +375,10 @@ fn check_is_emtpy(editable: *gtk.Editable) bool {
     return eql(editable.getText(), "");
 }
 
+fn getText(editable: *gtk.Editable) [*:0]const u8 {
+    return editable.getText();
+}
+
 fn eql(a: [*:0]const u8, b: [*:0]const u8) bool {
     var i: usize = 0;
     var a_elem: u8 = a[i];
@@ -377,5 +391,3 @@ fn eql(a: [*:0]const u8, b: [*:0]const u8) bool {
     }
     return a_elem == b_elem;
 }
-
-fn delay() void {}
