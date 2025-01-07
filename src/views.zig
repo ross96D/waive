@@ -73,6 +73,8 @@ pub fn init_application(app: *gtk.Application) void {
 
 pub const SearchPassword = struct {
     var search_password_window: ?*gtk.Window = null;
+    var list: List = undefined;
+    var search_entry: *gtk.Entry = undefined;
     pub fn get() *gtk.Window {
         if (search_password_window) |w| {
             return w;
@@ -94,6 +96,9 @@ pub const SearchPassword = struct {
 
         { // ---- CREATE ENTRY ----
             const entry = gtk.Entry.new();
+            search_entry = entry;
+            _ = gtk.Editable.signals.changed.connect(entry, ?*anyopaque, cb_entry_change, null, .{});
+
             gtk.Entry.setPlaceholderText(entry, "search for link or password");
             _ = gtk.Entry.signals.activate.connect(entry, *gtk.Window, entry_enter, w, .{});
             gtk.Widget.setHexpand(entry.as(gtk.Widget), 1);
@@ -106,7 +111,7 @@ pub const SearchPassword = struct {
         }
 
         { // ---- CREATE LIST ----
-            var list = List{ .cb_filter = cb_list_filter };
+            list = List{ .cb_filter = cb_list_filter };
             const list_widget = list.create_list();
 
             const scrolled = gtk.ScrolledWindow.new();
@@ -119,12 +124,32 @@ pub const SearchPassword = struct {
         return search_password_window.?;
     }
 
-    fn cb_list_filter(p_item: *gobject.Object, p_user_data: ?*anyopaque) callconv(.C) c_int {
-        const sdad: *gtk.StringObject = @ptrCast(p_item);
-        std.debug.print("{s}\n", .{sdad.getString()});
-        // _ = p_item;
-        _ = p_user_data;
-        return 1;
+    fn cb_entry_change(_: *gtk.Entry, _: ?*anyopaque) callconv(.C) void {
+        // TRIGGER FILTER
+        const new_filter = gtk.CustomFilter.new(list.cb_filter, null, null);
+        list.filter.setFilter(new_filter.as(gtk.Filter));
+    }
+
+    fn cb_list_filter(p_item: *gobject.Object, _: ?*anyopaque) callconv(.C) c_int {
+        const item: *gtk.StringObject = @ptrCast(p_item);
+
+        const text = getText(search_entry.as(gtk.Editable));
+        const text_slc = utils.to_slice(text);
+
+        const item_str = item.getString();
+        const item_slc = utils.to_slice(item_str);
+
+        if (text_slc.len == 0) return 1;
+
+        const length = @min(text_slc.len, item_slc.len);
+
+        const score = utils.string_distance_score(
+            allocator,
+            text_slc[0..length],
+            item_slc[0..length],
+        ) catch unreachable;
+
+        return if (score > 0.5) 1 else 0;
     }
 
     fn entry_enter(entry: *gtk.Entry, window: *gtk.Window) callconv(.C) void {
@@ -190,17 +215,20 @@ pub const SearchPassword = struct {
 
     const List = struct {
         gtk_list: *gtk.StringList = undefined,
+        filter: *gtk.FilterListModel = undefined,
+
         cb_filter: gtk.CustomFilterFunc,
 
-        var gtk_list: *gtk.StringList = undefined;
+        /// using global isntance here because the List
+        // var gtk_list: *gtk.StringList = undefined;
 
         fn create_list(self: *List) *gtk.ListView {
             const model_gio = gtk.StringList.new(null);
             self.gtk_list = model_gio;
-            gtk_list = model_gio;
 
             const filter = gtk.CustomFilter.new(self.cb_filter, null, null);
             const model_filter = gtk.FilterListModel.new(model_gio.as(gio.ListModel), filter.as(gtk.Filter));
+            self.filter = model_filter;
 
             const model = gtk.SingleSelection.new(model_filter.as(gio.ListModel));
 
@@ -213,7 +241,7 @@ pub const SearchPassword = struct {
 
             pass.get_passphrase(param);
 
-            return list(model.as(gtk.SelectionModel));
+            return list_view(model.as(gtk.SelectionModel));
         }
 
         fn cb_fill_list(p_res: ?[*:0]u8, p_error: ?*glib.Error, p_data: ?*anyopaque) void {
@@ -226,12 +254,11 @@ pub const SearchPassword = struct {
             const store = storage.Storage.init(utils.to_slice(passphrase), allocator) catch unreachable;
 
             const self: *List = @ptrCast(@alignCast(p_data));
-            _ = self;
 
-            store.get_all_namespaces(allocator, gtk_list) catch unreachable;
+            store.get_all_namespaces(allocator, self.gtk_list) catch unreachable;
         }
 
-        pub fn list(model: *gtk.SelectionModel) *gtk.ListView {
+        pub fn list_view(model: *gtk.SelectionModel) *gtk.ListView {
             const item_factory = create_factory();
             return gtk.ListView.new(model, item_factory.as(gtk.ListItemFactory));
         }
