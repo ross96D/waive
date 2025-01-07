@@ -7,8 +7,8 @@ const gio = @import("gio");
 
 pub fn activate(app: *gtk.Application, _: ?*anyopaque) callconv(.C) void {
     views.init_application(app);
-    // const window = views.SearchPassword.get();
-    const window = views.AddPassword.get();
+    const window = views.SearchPassword.get();
+    // const window = views.AddPassword.get();
 
     std.log.debug("Window.present(SearchPassword)", .{});
     gtk.Window.present(window);

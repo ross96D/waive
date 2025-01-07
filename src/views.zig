@@ -3,6 +3,7 @@ const gtk = @import("gtk");
 const gio = @import("gio");
 const glib = @import("glib");
 const gdk = @import("gdk");
+const gobject = @import("gobject");
 const pass = @import("passphrase/root.zig");
 const storage = @import("database/storage.zig");
 const utils = @import("utils.zig");
@@ -90,37 +91,40 @@ pub const SearchPassword = struct {
         gtk.Box.setSpacing(main_box, 3);
         gtk.Window.setChild(w, main_box.as(gtk.Widget));
         gtk.Widget.setSizeRequest(main_box.as(gtk.Widget), 500, 0);
-        // ---- END ----
 
-        // ---- CREATE ENTRY ----
-        const entry = gtk.Entry.new();
-        gtk.Entry.setPlaceholderText(entry, "search for link or password");
-        _ = gtk.Entry.signals.activate.connect(entry, *gtk.Window, entry_enter, w, .{});
-        gtk.Widget.setHexpand(entry.as(gtk.Widget), 1);
-        gtk.Box.append(main_box, entry.as(gtk.Widget));
-        // ---- END ----
+        { // ---- CREATE ENTRY ----
+            const entry = gtk.Entry.new();
+            gtk.Entry.setPlaceholderText(entry, "search for link or password");
+            _ = gtk.Entry.signals.activate.connect(entry, *gtk.Window, entry_enter, w, .{});
+            gtk.Widget.setHexpand(entry.as(gtk.Widget), 1);
+            gtk.Box.append(main_box, entry.as(gtk.Widget));
 
-        // ---- CUSTOM FOCUS EVENT ----
-        const controller = gtk.EventControllerKey.new();
-        _ = gtk.EventControllerKey.signals.key_pressed.connect(controller, *gtk.Entry, global_key_press, entry, .{});
-        gtk.Widget.addController(w.as(gtk.Widget), controller.as(gtk.EventController));
-        // ---- END ----
+            // ---- CUSTOM FOCUS EVENT ----
+            const controller = gtk.EventControllerKey.new();
+            _ = gtk.EventControllerKey.signals.key_pressed.connect(controller, *gtk.Entry, global_key_press, entry, .{});
+            gtk.Widget.addController(w.as(gtk.Widget), controller.as(gtk.EventController));
+        }
 
-        // ---- CREATE LIST ----
-        std.log.debug("gtk.StringList.new", .{});
-        const model_gio = gtk.StringList.new(@ptrCast(data_example));
-        std.log.debug("gtk.SingleSelection.new", .{});
-        const model = gtk.SingleSelection.new(model_gio.as(gio.ListModel));
-        const list = @import("list.zig").list(model.as(gtk.SelectionModel));
+        { // ---- CREATE LIST ----
+            var list = List{ .cb_filter = cb_list_filter };
+            const list_widget = list.create_list();
 
-        const scrolled = gtk.ScrolledWindow.new();
-        gtk.Widget.setVexpand(scrolled.as(gtk.Widget), 1);
-        gtk.ScrolledWindow.setChild(scrolled, list.as(gtk.Widget));
+            const scrolled = gtk.ScrolledWindow.new();
+            gtk.Widget.setVexpand(scrolled.as(gtk.Widget), 1);
+            gtk.ScrolledWindow.setChild(scrolled, list_widget.as(gtk.Widget));
 
-        gtk.Box.append(main_box, scrolled.as(gtk.Widget));
-        // ---- END ----
+            gtk.Box.append(main_box, scrolled.as(gtk.Widget));
+        }
 
         return search_password_window.?;
+    }
+
+    fn cb_list_filter(p_item: *gobject.Object, p_user_data: ?*anyopaque) callconv(.C) c_int {
+        const sdad: *gtk.StringObject = @ptrCast(p_item);
+        std.debug.print("{s}\n", .{sdad.getString()});
+        // _ = p_item;
+        _ = p_user_data;
+        return 1;
     }
 
     fn entry_enter(entry: *gtk.Entry, window: *gtk.Window) callconv(.C) void {
@@ -183,6 +187,80 @@ pub const SearchPassword = struct {
         }
         return 0;
     }
+
+    const List = struct {
+        gtk_list: *gtk.StringList = undefined,
+        cb_filter: gtk.CustomFilterFunc,
+
+        var gtk_list: *gtk.StringList = undefined;
+
+        fn create_list(self: *List) *gtk.ListView {
+            const model_gio = gtk.StringList.new(null);
+            self.gtk_list = model_gio;
+            gtk_list = model_gio;
+
+            const filter = gtk.CustomFilter.new(self.cb_filter, null, null);
+            const model_filter = gtk.FilterListModel.new(model_gio.as(gio.ListModel), filter.as(gtk.Filter));
+
+            const model = gtk.SingleSelection.new(model_filter.as(gio.ListModel));
+
+            const param = allocator.create(pass.GetPassphraseData) catch unreachable;
+            param.* = pass.GetPassphraseData{
+                .cb = cb_fill_list,
+                .data = @ptrCast(self),
+                .window = search_password_window.?,
+            };
+
+            pass.get_passphrase(param);
+
+            return list(model.as(gtk.SelectionModel));
+        }
+
+        fn cb_fill_list(p_res: ?[*:0]u8, p_error: ?*glib.Error, p_data: ?*anyopaque) void {
+            if (p_error) |err| {
+                std.log.err("cb_set_password {d} {s}", .{ err.f_code, err.f_message orelse "unknown error" });
+                return;
+            }
+            std.debug.assert(p_res != null);
+            const passphrase = p_res.?;
+            const store = storage.Storage.init(utils.to_slice(passphrase), allocator) catch unreachable;
+
+            const self: *List = @ptrCast(@alignCast(p_data));
+            _ = self;
+
+            store.get_all_namespaces(allocator, gtk_list) catch unreachable;
+        }
+
+        pub fn list(model: *gtk.SelectionModel) *gtk.ListView {
+            const item_factory = create_factory();
+            return gtk.ListView.new(model, item_factory.as(gtk.ListItemFactory));
+        }
+
+        fn create_factory() *gtk.ListItemFactory {
+            const factory = gtk.SignalListItemFactory.new();
+            _ = gtk.SignalListItemFactory.signals.setup.connect(factory, ?*anyopaque, setup, null, .{});
+            _ = gtk.SignalListItemFactory.signals.bind.connect(factory, ?*anyopaque, setup, null, .{});
+            return factory.as(gtk.ListItemFactory);
+        }
+
+        fn setup(_: *gtk.SignalListItemFactory, item_: *gobject.Object, _: ?*anyopaque) callconv(.C) void {
+            const item: *gtk.ListItem = @ptrCast(item_);
+            const objnull: ?*gtk.StringObject = @ptrCast(item.getItem());
+            if (objnull) |obj| {
+                const label = gtk.Label.new(obj.getString());
+                item.setChild(label.as(gtk.Widget));
+            }
+        }
+
+        fn bind(_: *gtk.SignalListItemFactory, item_: *gobject.Object, _: ?*anyopaque) callconv(.C) void {
+            const item: *gtk.ListItem = @ptrCast(item_);
+            const objnull: ?*gtk.StringObject = @ptrCast(item.getItem());
+            if (objnull) |obj| {
+                const label = gtk.Label.new(obj.getString());
+                item.setChild(label.as(gtk.Widget));
+            }
+        }
+    };
 };
 
 pub const AddPassword = struct {
@@ -220,7 +298,7 @@ pub const AddPassword = struct {
             gtk.Widget.setMarginBottom(header_box.as(gtk.Widget), 5);
 
             { // Add label with icon
-                const main_label = gtk.Label.new("Set password");
+                const main_label = gtk.Label.new("Add password");
                 const icon = gtk.Image.newFromIconName("dialog-password");
                 header_box.append(icon.as(gtk.Widget));
                 header_box.append(main_label.as(gtk.Widget));
