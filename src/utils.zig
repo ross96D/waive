@@ -1,5 +1,6 @@
 const std = @import("std");
 const gdk = @import("gdk");
+const gtk = @import("gtk");
 const bultin = @import("builtin");
 
 pub const APP_NAME = "waive";
@@ -16,10 +17,18 @@ pub fn init(allocator: std.mem.Allocator) void {
     priv_env = std.process.getEnvMap(allocator) catch unreachable;
 }
 
-pub fn text2clip(text: []const u8) void {
-    const display = gdk.Display.getDefault().?;
-    const clipboard = gdk.Display.getClipboard(display);
-    clipboard.setText(text);
+pub fn text2clip(text: [:0]const u8) void {
+    // const display = gdk.Display.getDefault().?;
+    // const clipboard = gdk.Display.getClipboard(display);
+    // clipboard.setText(text);
+    var child = std.process.Child.init(&[_][]const u8{"wl-copy"}, @import("views.zig").allocator);
+    child.stdin_behavior = .Pipe;
+    child.spawn() catch |err| {
+        switch (err) {
+            inline else => |e| @panic("child.spawn" ++ @errorName(e)),
+        }
+    };
+    _ = child.stdin.?.write(text) catch unreachable;
 }
 
 pub fn to_slice(data: [*:0]const u8) []u8 {
@@ -97,7 +106,7 @@ pub fn string_distance_score(allocator: std.mem.Allocator, s1: []const u8, s2: [
     }
 
     const distf: f32 = @floatFromInt(distance);
-    return (avg_len - @min(avg_len, distf)) / avg_len;
+    return ((avg_len - @min(avg_len, distf)) / avg_len) + (1 / (avg_len + 1));
 }
 
 /// Damerau-Levenshtein distance
@@ -159,4 +168,43 @@ test string_distance {
     try std.testing.expectEqual(1, try string_distance(std.testing.allocator, "st1", "st2"));
     try std.testing.expectEqual(1, try string_distance(std.testing.allocator, "st1", "s1t"));
     try std.testing.expectEqual(4, try string_distance(std.testing.allocator, "12345", "213000"));
+}
+
+pub fn set_widget_margin_all(widget: *gtk.Widget, margin: c_int) void {
+    widget.setMarginStart(margin);
+    widget.setMarginEnd(margin);
+    widget.setMarginTop(margin);
+    widget.setMarginBottom(margin);
+}
+
+pub fn Rc(T: type) type {
+    return struct {
+        const Self = @This();
+        _count: usize,
+        _allocator: std.mem.Allocator,
+        value: T,
+
+        pub fn init(allocator: std.mem.Allocator, value: T) *Self {
+            const result = allocator.create(Self) catch unreachable;
+            result.* = .{
+                ._allocator = allocator,
+                ._count = 1,
+                .value = value,
+            };
+            return result;
+        }
+
+        pub fn ref(self: *Self) void {
+            std.debug.assert(self._count > 0);
+            self._count += 1;
+        }
+
+        pub fn unref(self: *Self) void {
+            std.debug.assert(self._count > 0);
+            self._count -= 1;
+            if (self._count == 0) {
+                self._allocator.destroy(self);
+            }
+        }
+    };
 }

@@ -23,6 +23,11 @@ const data_example = &[_]?[*:0]const u8{
 };
 
 var application: *gtk.Application = undefined;
+fn close_application() noreturn {
+    const wlist = application.getWindows();
+    glib.List.foreach(wlist, &close_window, null);
+    std.process.exit(0);
+}
 var allocator_instance = std.heap.GeneralPurposeAllocator(.{}){};
 pub const allocator = allocator_instance.allocator();
 
@@ -38,9 +43,10 @@ fn set_layer(window: *gtk.Window) void {
     l.gtk_layer_set_keyboard_mode(w, l.GTK_LAYER_SHELL_KEYBOARD_MODE_EXCLUSIVE);
 }
 
-fn gtk_quit(_: *gio.SimpleAction, _: ?*glib.Variant, app: *gtk.Application) callconv(.C) void {
+fn gtk_quit(_: *gio.SimpleAction, _: ?*glib.Variant, app: *gtk.Application) callconv(.C) noreturn {
     const list = app.getWindows();
     glib.List.foreach(list, &close_window, null);
+    std.process.exit(0);
 }
 
 fn close_window(window: ?*anyopaque, _: ?*anyopaque) callconv(.C) void {
@@ -67,7 +73,7 @@ pub fn init_application(app: *gtk.Application) void {
     gtk.StyleContext.addProviderForDisplay(
         gdk.Display.getDefault().?,
         css_provider.as(gtk.StyleProvider),
-        gtk.STYLE_PROVIDER_PRIORITY_USER,
+        gtk.STYLE_PROVIDER_PRIORITY_SETTINGS,
     );
 }
 
@@ -83,24 +89,34 @@ pub const SearchPassword = struct {
         const w = window.as(gtk.Window);
         search_password_window = w;
 
-        w.setDefaultSize(500, 300);
+        // w.setDefaultSize(500, 300);
 
         set_layer(w);
 
         // ---- CREATE BOX ----
+        const frame = gtk.Frame.new(null);
+
         const main_box = gtk.Box.new(gtk.Orientation.vertical, 5);
+
         gtk.Widget.setName(main_box.as(gtk.Widget), "outer-box");
         gtk.Box.setSpacing(main_box, 3);
-        gtk.Window.setChild(w, main_box.as(gtk.Widget));
-        gtk.Widget.setSizeRequest(main_box.as(gtk.Widget), 500, 0);
+        gtk.Widget.setSizeRequest(main_box.as(gtk.Widget), 0, 120);
+
+        frame.setChild(main_box.as(gtk.Widget));
+        gtk.Window.setChild(w, frame.as(gtk.Widget));
 
         { // ---- CREATE ENTRY ----
             const entry = gtk.Entry.new();
+            gtk.Widget.setMarginTop(entry.as(gtk.Widget), 2);
+            gtk.Widget.setMarginBottom(entry.as(gtk.Widget), 2);
+            gtk.Widget.setMarginStart(entry.as(gtk.Widget), 2);
+            gtk.Widget.setMarginEnd(entry.as(gtk.Widget), 2);
+
             search_entry = entry;
             _ = gtk.Editable.signals.changed.connect(entry, ?*anyopaque, cb_entry_change, null, .{});
-
-            gtk.Entry.setPlaceholderText(entry, "search for link or password");
             _ = gtk.Entry.signals.activate.connect(entry, *gtk.Window, entry_enter, w, .{});
+            gtk.Entry.setPlaceholderText(entry, "search for link or password");
+
             gtk.Widget.setHexpand(entry.as(gtk.Widget), 1);
             gtk.Box.append(main_box, entry.as(gtk.Widget));
 
@@ -113,6 +129,7 @@ pub const SearchPassword = struct {
         { // ---- CREATE LIST ----
             list = List{ .cb_filter = cb_list_filter };
             const list_widget = list.create_list();
+            gtk.Widget.setName(list_widget.as(gtk.Widget), "list");
 
             const scrolled = gtk.ScrolledWindow.new();
             gtk.Widget.setVexpand(scrolled.as(gtk.Widget), 1);
@@ -145,33 +162,17 @@ pub const SearchPassword = struct {
 
         const score = utils.string_distance_score(
             allocator,
-            text_slc[0..length],
+            text_slc,
             item_slc[0..length],
         ) catch unreachable;
 
-        return if (score > 0.5) 1 else 0;
+        return if (score >= 0.5) 1 else 0;
     }
 
-    fn entry_enter(entry: *gtk.Entry, window: *gtk.Window) callconv(.C) void {
-        const buffer = entry.getBuffer();
-        const text = buffer.getText();
-
-        const dbus = @import("passphrase/dbus_secret_service.zig");
-
-        if (eql(text, "")) {
-            const param = allocator.create(pass.GetPassphraseData) catch unreachable;
-            param.* = pass.GetPassphraseData{
-                .cb = null,
-                .data = null,
-                .window = window,
-            };
-            pass.get_passphrase(param);
-        } else if (eql(text, "-1")) {
-            std.debug.print("delete_passphras\n", .{});
-            dbus.delete_passphrase(on_delete_passphrase, null);
-        } else {
-            std.debug.print("search password\n", .{});
-        }
+    fn entry_enter(entry: *gtk.Entry, _: *gtk.Window) callconv(.C) void {
+        const text = gtk.Editable.getText(entry.as(gtk.Editable));
+        _ = text;
+        // search namespace in text
     }
 
     fn on_delete_passphrase(_: bool, p_error: ?*glib.Error, _: ?*anyopaque) void {
@@ -219,9 +220,6 @@ pub const SearchPassword = struct {
 
         cb_filter: gtk.CustomFilterFunc,
 
-        /// using global isntance here because the List
-        // var gtk_list: *gtk.StringList = undefined;
-
         fn create_list(self: *List) *gtk.ListView {
             const model_gio = gtk.StringList.new(null);
             self.gtk_list = model_gio;
@@ -231,14 +229,13 @@ pub const SearchPassword = struct {
             self.filter = model_filter;
 
             const model = gtk.SingleSelection.new(model_filter.as(gio.ListModel));
+            // _ = gtk.SelectionModel.signals.selection_changed.connect(model, ?*anyopaque, cb_selection_changed, null, .{});
 
-            const param = allocator.create(pass.GetPassphraseData) catch unreachable;
-            param.* = pass.GetPassphraseData{
+            const param = utils.Rc(pass.GetPassphraseData).init(allocator, pass.GetPassphraseData{
                 .cb = cb_fill_list,
                 .data = @ptrCast(self),
                 .window = search_password_window.?,
-            };
-
+            });
             pass.get_passphrase(param);
 
             return list_view(model.as(gtk.SelectionModel));
@@ -260,7 +257,61 @@ pub const SearchPassword = struct {
 
         pub fn list_view(model: *gtk.SelectionModel) *gtk.ListView {
             const item_factory = create_factory();
-            return gtk.ListView.new(model, item_factory.as(gtk.ListItemFactory));
+            const result = gtk.ListView.new(model, item_factory.as(gtk.ListItemFactory));
+            _ = gtk.ListView.signals.activate.connect(result, ?*anyopaque, cb_selection_changed, null, .{});
+            return result;
+        }
+
+        fn cb_selection_changed(lis: *gtk.ListView, p_position: c_uint, _: ?*anyopaque) callconv(.C) void {
+            const selection_model: *gtk.SingleSelection = @ptrCast(lis.getModel().?);
+            const filter_model: *gtk.FilterListModel = @ptrCast(selection_model.getModel().?);
+            const str_list: *gtk.StringList = @ptrCast(filter_model.getModel().?);
+
+            const ParamData = struct {
+                str_list: *gtk.StringList,
+                p_position: c_uint,
+            };
+            const param_data = allocator.create(ParamData) catch unreachable;
+            param_data.* = .{
+                .str_list = str_list,
+                .p_position = p_position,
+            };
+
+            const cb = struct {
+                fn f(p_res: ?[*:0]u8, p_error: ?*glib.Error, data_: ?*anyopaque) void {
+                    const data: *ParamData = @ptrCast(@alignCast(data_));
+                    if (p_error) |err| {
+                        std.log.err("get_passphrase {s}", .{err.f_message orelse "unknown"});
+                        close_application();
+                    }
+                    const passphrase = p_res.?;
+                    const entry: [*:0]const u8 = data.str_list.getString(data.p_position) orelse {
+                        std.log.err("no string value on selected list position", .{});
+                        close_application();
+                    };
+                    copy_password(utils.to_slice(passphrase), utils.to_slice(entry)) catch |err| {
+                        std.log.err("copy_password {}", .{err});
+                        close_application();
+                    };
+                }
+            }.f;
+            const params = utils.Rc(pass.GetPassphraseData).init(allocator, pass.GetPassphraseData{
+                .window = search_password_window.?,
+                .cb = cb,
+                .data = @ptrCast(param_data),
+            });
+            pass.get_passphrase(params);
+            // storage.Storage.init(, allocator: std.mem.Allocator)
+        }
+
+        fn copy_password(passphrase: []const u8, namespace: []const u8) !void {
+            const store = try storage.Storage.init(passphrase, allocator);
+            if (try store.clip(namespace)) {
+                close_application();
+            } else {
+                std.log.err("password not found", .{});
+                // notify that password was not found
+            }
         }
 
         fn create_factory() *gtk.ListItemFactory {
@@ -275,6 +326,9 @@ pub const SearchPassword = struct {
             const objnull: ?*gtk.StringObject = @ptrCast(item.getItem());
             if (objnull) |obj| {
                 const label = gtk.Label.new(obj.getString());
+                gtk.Widget.setHalign(label.as(gtk.Widget), .start);
+                gtk.Widget.setMarginStart(label.as(gtk.Widget), 5);
+                gtk.Widget.setMarginEnd(label.as(gtk.Widget), 5);
                 item.setChild(label.as(gtk.Widget));
             }
         }
@@ -431,12 +485,11 @@ pub const AddPassword = struct {
             _ = glib.timeoutAddOnce(2000, cb_reset_css_classes, widgets);
             return;
         }
-        const cb_data = allocator.create(pass.GetPassphraseData) catch unreachable;
-        cb_data.* = pass.GetPassphraseData{
+        const cb_data = utils.Rc(pass.GetPassphraseData).init(allocator, pass.GetPassphraseData{
             .cb = cb_set_password,
             .data = application,
             .window = add_password_window.?,
-        };
+        });
         pass.get_passphrase(cb_data);
     }
 

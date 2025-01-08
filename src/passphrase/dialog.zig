@@ -2,6 +2,7 @@ const std = @import("std");
 const gtk = @import("gtk");
 const glib = @import("glib");
 const dbus_secret = @import("./dbus_secret_service.zig");
+const utils = @import("../utils.zig");
 
 fn set_layer(window: *gtk.Window) void {
     const l = @cImport(@cInclude("gtk4-layer-shell.h"));
@@ -45,7 +46,15 @@ pub const Dialog = extern struct {
         };
 
         _ = gtk.Dialog.signals.response.connect(dialog.as(gtk.Dialog), ?*anyopaque, cb_response, null, .{});
-        const content_box = gtk.Dialog.getContentArea(dialog.as(gtk.Dialog));
+
+        const content_box = gtk.Box.new(.horizontal, 5);
+        { // ---- FRAME ----
+            const frame = gtk.Frame.new("Insert the passphrase");
+            frame.setLabelAlign(0.5);
+            gtk.Window.setChild(dialog.as(gtk.Window), frame.as(gtk.Widget));
+            utils.set_widget_margin_all(content_box.as(gtk.Widget), 5);
+            frame.setChild(content_box.as(gtk.Widget));
+        }
 
         // ---- ENTRY ----
         const entry = gtk.Entry.new();

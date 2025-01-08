@@ -12,7 +12,7 @@ const Key = struct {
 
 pub fn clean_mem(data: []u8) void {
     for (data) |*e| {
-        e = 0;
+        e.* = 0;
     }
 }
 

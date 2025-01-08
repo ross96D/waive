@@ -56,20 +56,22 @@ pub const Storage = struct {
         std.debug.assert(n == encp.len); // TODO add context
     }
 
-    pub fn clip(self: Storage, namespace: []const u8) !void {
-        const file = try self.dir.openFile(namespace, .{});
+    pub fn clip(self: Storage, namespace: []const u8) !bool {
+        const file = self.dir.openFile(namespace, .{}) catch return false;
         defer file.close();
 
         const encpass = try file.readToEndAlloc(self.allocator, 1 << 28);
         defer self.allocator.free(encpass);
 
-        const dest = try self.allocator.alloc(u8, encpass.len);
+        const dest: [:0]u8 = try self.allocator.allocSentinel(u8, encpass.len, 0);
         defer {
             password.clean_mem(dest);
             self.allocator.free(dest);
         }
         const decp = password.decrypt(self.passphrase, dest, encpass);
-        utils.text2clip(decp.text);
+        utils.text2clip(@ptrCast(decp.text));
+
+        return true;
     }
 
     pub fn get_all_namespaces(self: Storage, allocator: std.mem.Allocator, list: *gtk.StringList) !void {
@@ -82,16 +84,3 @@ pub const Storage = struct {
         }
     }
 };
-
-// test "get_all_namespaces" {
-//     const cwd = try std.fs.cwd().openDir(".", .{ .iterate = true });
-//     const storage = Storage.initWithDir(cwd, "123", std.testing.allocator);
-//     var list = std.ArrayList([]const u8).init(std.testing.allocator);
-//     defer list.deinit();
-//     try storage.get_all_namespaces(std.testing.allocator, &list);
-
-//     for (list.items) |item| {
-//         std.debug.print(" {*} name {s}\n", .{ item.ptr, item });
-//         std.testing.allocator.free(item);
-//     }
-// }

@@ -1,7 +1,14 @@
 .invalid {
     background-color: red;
-    /* transition: background-color ease-out 0.5s; */
 }
-* {
+entry {
     transition: background-color ease-out 0.35s;
+}
+
+frame {
+    background-color: @theme_bg_color;
+}
+
+window {
+    background-color: rgba(0, 0, 0, 0);
 }
