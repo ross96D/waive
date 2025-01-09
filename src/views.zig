@@ -384,6 +384,18 @@ pub const AddPassword = struct {
                 header_box.append(icon.as(gtk.Widget));
                 header_box.append(main_label.as(gtk.Widget));
             }
+            { // Add button to set passphrase
+                const button = gtk.Button.newFromIconName("view-more-horizontal-symbolic");
+                const cb = struct {
+                    fn f(_: *gtk.Button, _: ?*void) callconv(.C) void {
+                        pass.dialog.Dialog.pop(add_password_window.?, null, null);
+                    }
+                }.f;
+                _ = gtk.Button.signals.clicked.connect(button, ?*void, cb, null, .{});
+                button.setHasFrame(0);
+                gtk.Widget.setMarginStart(button.as(gtk.Widget), 5);
+                header_box.append(button.as(gtk.Widget));
+            }
 
             frame.setLabelWidget(header_box.as(gtk.Widget));
 
